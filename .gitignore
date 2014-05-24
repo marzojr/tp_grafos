@@ -19,3 +19,10 @@
 *.exe
 *.out
 *.app
+dijkstra
+
+# Dependencies
+*.d
+
+# Backup
+*~
