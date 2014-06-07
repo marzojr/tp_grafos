@@ -115,8 +115,6 @@ protected:
 			// Continue recursivamente até o elemento chegar ao local certo.
 			heapify(smallest);
 		}
-
-		
 	}
 
 private:

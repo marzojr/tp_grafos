@@ -24,6 +24,12 @@
 
 using namespace std;
 
+#if defined(__GNUC__) 
+# define UNUSED(x) UNUSED_ ## x __attribute__((unused))
+#else
+# define UNUSED(x) x 
+#endif
+
 /*
  * Functor de comparação para algoritmo de Dijkstra. Como o heap na STL é um
  * max-heap, queremos que ele compare na ordem inversa.
@@ -68,7 +74,8 @@ struct SetIndex {
  */
 struct DijkstraSuccessors {
 	template <typename H>
-	void operator()(Node *node, Graph &g, H &heap, size_t &ins, size_t &upd) {
+	void operator()(Node *node, Node *UNUSED(src), Node *UNUSED(dst), Graph &g, H &heap,
+	                size_t &ins, size_t &upd) {
 		vector<Node *> adj = g.get_adjacent_list(node);
 		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
 			Node *next = *it;
@@ -94,19 +101,236 @@ struct DijkstraSuccessors {
  */
 struct JPSSuccessors {
 	template <typename H>
-	void operator()(Node *node, Graph &g, H &heap, size_t &ins, size_t &upd) {
+	void operator()(Node *node, Node *src, Node *dst, Graph &g, H &heap,
+	                size_t &ins, size_t &upd) {
+		// Precisamos de saber a direção também, de modo que não dá para
+		// usar Graph::get_adjacent_list.
+		static Direction const dirs[] = {eNorth, eNorthEast, eEast, eSouthEast,
+			                             eSouth, eSouthWest, eWest, eNorthWest};
+		vector<Node *> adj;
+		if (node == src) {
+			for (unsigned ii = 0; ii < sizeof(dirs) / sizeof(dirs[0]); ii++) {
+				add_neighbour(g, node, dirs[ii], adj);
+			}
+		} else {
+			adj = get_neighbours(node, g);
+		}
+		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
+			Node *next = *it;
+			Direction dir = next->get_dir_from();
+			next = jump(node, src, dst, dir, g);
+			if (next) {
+				unsigned dst = node->get_distance() + node->distance_to(next);
+				if (next->get_distance() > dst) {
+					next->set_dir_from(dir);
+					next->set_distance(dst);
+					next->set_parent(node);
+					//if (next->still_unseen()) {
+					if (!next->already_seen()) {
+						next->mark_seen();
+						heap.insert(next);
+						ins++;
+					} else {
+						heap.update_elem(next);
+						upd++;
+					}
+				}
+			}
+		}
+	}
+private:
+	Node *jump(Node *node, Node *src, Node *dst, Direction dir, Graph &g) {
+		Node *next = node;
+		do {
+			next = g.get_adjacent(next, dir);
+			if (!next) {
+				return 0;
+			} else if (next == dst) {
+				return next;
+			}
+			
+			// O nó tem vizinhos forçados na sua vizinhança?
+			vector<Node *> adj;
+			forced_neighbours(g, next, dir, adj);
+			if (!adj.empty()) {
+				return next;
+			}
+
+			// Recursão nas diagonais.
+			switch (dir) {
+				case eNorthEast:
+					if (jump(next, src, dst, eNorth, g) != 0) {
+						return next;
+					}
+					if (jump(next, src, dst, eEast, g) != 0) {
+						return next;
+					}
+					break;
+				case eSouthEast:
+					if (jump(next, src, dst, eSouth, g) != 0) {
+						return next;
+					}
+					if (jump(next, src, dst, eEast, g) != 0) {
+						return next;
+					}
+					break;
+				case eSouthWest:
+					if (jump(next, src, dst, eSouth, g) != 0) {
+						return next;
+					}
+					if (jump(next, src, dst, eWest, g) != 0) {
+						return next;
+					}
+					break;
+				case eNorthWest:
+					if (jump(next, src, dst, eNorth, g) != 0) {
+						return next;
+					}
+					if (jump(next, src, dst, eWest, g) != 0) {
+						return next;
+					}
+					break;
+				default:
+					break;
+			}
+		} while (1);
+	}
+
+	void add_neighbour(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
+		Node *next = g.get_adjacent(node, dir);
+		if (next) {
+			adj.push_back(next);
+			next->set_dir_from(dir);
+		}
+	}
+
+	void natural_neighbours(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
+		// Vizinho natural comum a todos casos.
+		add_neighbour(g, node, dir, adj);
+
+		switch (dir) {
+			case eNorthEast:
+				// Naturais:
+				add_neighbour(g, node, eNorth, adj);
+				add_neighbour(g, node, eEast, adj);
+				break;
+			case eSouthEast:
+				// Naturais:
+				add_neighbour(g, node, eSouth, adj);
+				add_neighbour(g, node, eEast, adj);
+				break;
+			case eSouthWest:
+				// Naturais:
+				add_neighbour(g, node, eSouth, adj);
+				add_neighbour(g, node, eWest, adj);
+				break;
+			case eNorthWest:
+				// Naturais:
+				add_neighbour(g, node, eNorth, adj);
+				add_neighbour(g, node, eWest, adj);
+				break;
+			default:
+				break;
+		}
+	}
+
+	void forced_neighbours(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
+		switch (dir) {
+			case eEast:
+				// Forçados:
+				if (!g.get_adjacent(node, eNorth)) {
+					add_neighbour(g, node, eNorthEast, adj);
+				}
+				if (!g.get_adjacent(node, eSouth)) {
+					add_neighbour(g, node, eSouthEast, adj);
+				}
+				break;
+			case eWest:
+				// Forçados:
+				if (!g.get_adjacent(node, eNorth)) {
+					add_neighbour(g, node, eNorthWest, adj);
+				}
+				if (!g.get_adjacent(node, eSouth)) {
+					add_neighbour(g, node, eSouthWest, adj);
+				}
+				break;
+			case eNorth:
+				// Forçados:
+				if (!g.get_adjacent(node, eEast)) {
+					add_neighbour(g, node, eNorthEast, adj);
+				}
+				if (!g.get_adjacent(node, eWest)) {
+					add_neighbour(g, node, eNorthWest, adj);
+				}
+				break;
+			case eSouth:
+				// Forçados:
+				if (!g.get_adjacent(node, eEast)) {
+					add_neighbour(g, node, eSouthEast, adj);
+				}
+				if (!g.get_adjacent(node, eWest)) {
+					add_neighbour(g, node, eSouthWest, adj);
+				}
+				break;
+			case eNorthEast:
+				// Forçados:
+				if (!g.get_adjacent(node, eWest)) {
+					add_neighbour(g, node, eNorthWest, adj);
+				}
+				if (!g.get_adjacent(node, eSouth)) {
+					add_neighbour(g, node, eSouthEast, adj);
+				}
+				break;
+			case eSouthEast:
+				// Forçados:
+				if (!g.get_adjacent(node, eWest)) {
+					add_neighbour(g, node, eSouthWest, adj);
+				}
+				if (!g.get_adjacent(node, eNorth)) {
+					add_neighbour(g, node, eNorthEast, adj);
+				}
+				break;
+			case eSouthWest:
+				// Forçados:
+				if (!g.get_adjacent(node, eEast)) {
+					add_neighbour(g, node, eSouthEast, adj);
+				}
+				if (!g.get_adjacent(node, eNorth)) {
+					add_neighbour(g, node, eNorthWest, adj);
+				}
+				break;
+			case eNorthWest:
+				// Forçados:
+				if (!g.get_adjacent(node, eEast)) {
+					add_neighbour(g, node, eNorthEast, adj);
+				}
+				if (!g.get_adjacent(node, eSouth)) {
+					add_neighbour(g, node, eSouthWest, adj);
+				}
+				break;
+			default:
+				break;
+		}
+	}
+
+	vector<Node *> get_neighbours(Node *node, Graph &g) {
+		vector<Node *> adj;
+		adj.reserve(8);
+		Direction dir = node->get_dir_from();
+		natural_neighbours(g, node, dir, adj);
+		forced_neighbours(g, node, dir, adj);
+		return adj;
 	}
 };
 
 // Versão genérica para Dijkstra, A* e JPS usando functors ou poiteiros para
 // funções para efetuar as operações necessárias.
 template <typename Compare, typename Successors>
-void ShortestPath(Graph &g, Compare cmp, Successors succ, size_t &ins, size_t &upd, size_t &pop) {
+void ShortestPath(Graph &g, Node *src, Node *dst, Compare cmp, Successors succ,
+                  size_t &ins, size_t &upd, size_t &pop) {
 	g.init_single_source();
 	ins = upd = pop = 0;
 
-	Node *src = g.get_src(), *dst = g.get_dst();
-	
 	Heap<Node, Compare, GetIndex, SetIndex> heap(cmp);
 	heap.insert(src);
 	ins++;
@@ -120,36 +344,27 @@ void ShortestPath(Graph &g, Compare cmp, Successors succ, size_t &ins, size_t &u
 			break;
 		}
 
-		succ(u, g, heap, ins, upd);
+		succ(u, src, dst, g, heap, ins, upd);
 	}
 }
 
-void dump_path_info(Graph &g, char const *method, size_t ins, size_t upd, size_t pop, bool interp) {
+void dump_path_info(Graph &UNUSED(g), Node *src, Node *dst, char const *method, size_t ins, size_t upd, size_t pop) {
 	cout << method << endl;
 	cout << "insert = " << ins << ", update = " << upd << ", extract = " << pop << endl;
-	Node *dest = g.get_dst();
-	if (dest->get_parent() == 0) {
+	if (dst->get_parent() == 0) {
 		cout << "destination unreachable from source" << endl;
 		return;
 	}
-	cout << "distance = " << dest->get_distance() / 10.0 << endl;
+	cout << "distance = " << dst->get_distance() / DISTANCE_PRECISION << endl;
 	cout << "path:" << endl;
 	list<Node *> path;
-	Node *prev = dest, *src = g.get_src();
+	Node *prev = dst;
 	do {
 		path.push_front(prev);
-		if (interp) {
-			Node *next = prev->get_parent();
-			Direction dir = flip_dir(prev->get_dir_from());
-			prev = g.get_adjacent(prev, dir);
-			while (prev != next) {
-				path.push_front(prev);
-				prev = g.get_adjacent(prev, dir);
-			}
-		} else {
-			prev = prev->get_parent();
-		}
+		prev = prev->get_parent();
 	} while (prev != src);
+
+	path.push_front(src);
 
 	size_t nodecnt = 16;
 	for (list<Node *>::const_iterator it = path.begin(); it != path.end(); ++it) {
@@ -177,21 +392,20 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	Node *src = g.get_src(), *dst = g.get_dst();
 	// Para estatísticas.
 	size_t ins, upd, pop;
 	// Dijkstra
-	ShortestPath(g, DijkstraCmp(), DijkstraSuccessors(), ins, upd, pop);
-	dump_path_info(g, "==== Dijkstra ====", ins, upd, pop, false);
+	ShortestPath(g, src, dst, DijkstraCmp(), DijkstraSuccessors(), ins, upd, pop);
+	dump_path_info(g, src, dst, "==== Dijkstra ====", ins, upd, pop);
 
 	// A*
-	ShortestPath(g, AstarCmp(g.get_dst()), DijkstraSuccessors(), ins, upd, pop);
-	dump_path_info(g, "==== A* ==========", ins, upd, pop, false);
+	ShortestPath(g, src, dst, AstarCmp(dst), DijkstraSuccessors(), ins, upd, pop);
+	dump_path_info(g, src, dst, "==== A* ==========", ins, upd, pop);
 
 	// JPS
-#if 0
-	ShortestPath(g, AstarCmp(g.get_dst()), JPSSuccessors(), ins, upd, pop);
-	dump_path_info(g, "==== JPS =========", ins, upd, pop, true);
-#endif
+	ShortestPath(g, src, dst, AstarCmp(dst), JPSSuccessors(), ins, upd, pop);
+	dump_path_info(g, src, dst, "==== JPS =========", ins, upd, pop);
 	return 0;
 }
 

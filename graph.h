@@ -31,10 +31,10 @@ enum Direction {
 	eSouth,
 	eSouthWest,
 	eWest,
-	eNothWest
+	eNorthWest
 };
 
-Direction flip_dir(Direction dir);
+#define DISTANCE_PRECISION 10.0
 
 class Node {
 public:
@@ -59,7 +59,7 @@ public:
 
 	unsigned distance_to(Node const *other) const {
 		int dx = x - other->x, dy = y - other->y;
-		return static_cast<unsigned>(10.0 * sqrt(dx * dx + dy * dy));
+		return static_cast<unsigned>(DISTANCE_PRECISION * sqrt(dx * dx + dy * dy));
 	}
 
 	// Getters.
@@ -148,10 +148,6 @@ public:
 		return get_adjacent(node->get_x(), node->get_y(), dir);
 	}
 
-	bool is_forced_node(Node *node, Direction from) {
-		return is_forced_node(node->get_x(), node->get_y(), from);
-	}
-
 	void init_single_source() {
 		for (std::vector<Node>::iterator it = nodes.begin();
 		     it != nodes.end(); ++it) {
@@ -171,7 +167,7 @@ private:
 		std::vector<Node *> nodes;
 		nodes.reserve(8);
 		static Direction const dirs[] = {eNorth, eNorthEast, eEast, eSouthEast,
-		                                 eSouth, eSouthWest, eWest, eNothWest};
+		                                 eSouth, eSouthWest, eWest, eNorthWest};
 
 		for (unsigned ii = 0; ii < sizeof(dirs) / sizeof(dirs[0]); ii++) {
 			Node *node = get_adjacent(x, y, dirs[ii]);
@@ -211,10 +207,10 @@ private:
 			case eWest:
 				adj = get_node(x - 1, y + 0);
 				break;
-			case eNothWest:
+			case eNorthWest:
 				adj = get_node(x - 1, y - 1);
 				break;
-		};
+		}
 
 		if (!adj || adj->is_blocked()) {
 			return 0;
@@ -236,34 +232,12 @@ private:
 				return get_adjacent(x, y, eEast) || get_adjacent(x, y, eSouth);
 			case eSouthWest:
 				return get_adjacent(x, y, eWest) || get_adjacent(x, y, eSouth);
-			case eNothWest:
+			case eNorthWest:
 				return get_adjacent(x, y, eWest) || get_adjacent(x, y, eNorth);
 			default:
 				return false;
-		};
+		}
 	}
-
-	bool is_forced_node(int x, int y, Direction from) {
-		switch (from) {
-			case eEast:
-			case eWest:
-				return !get_adjacent(x, y, eNorth) || !get_adjacent(x, y, eSouth);
-			case eNorth:
-			case eSouth:
-				return !get_adjacent(x, y, eEast) || !get_adjacent(x, y, eWest);
-			case eNorthEast:
-				return !get_adjacent(x, y, eEast) || !get_adjacent(x, y, eNorth);
-			case eSouthEast:
-				return !get_adjacent(x, y, eEast) || !get_adjacent(x, y, eSouth);
-			case eSouthWest:
-				return !get_adjacent(x, y, eWest) || !get_adjacent(x, y, eSouth);
-			case eNothWest:
-				return !get_adjacent(x, y, eWest) || !get_adjacent(x, y, eNorth);
-			default:
-				return false;
-		};
-	}
-
 };
 
 #endif // _GRAPH_H_

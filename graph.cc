@@ -24,31 +24,7 @@
 
 using namespace std;
 
-Direction flip_dir(Direction dir) {
-	switch (dir) {
-		case eNorth:
-			return eSouth;
-		case eNorthEast:
-			return eSouthWest;
-		case eEast:
-			return eWest;
-		case eSouthEast:
-			return eNothWest;
-		case eSouth:
-			return eNorth;
-		case eSouthWest:
-			return eNorthEast;
-		case eWest:
-			return eEast;
-		case eNothWest:
-			return eSouthEast;
-		default:
-			return dir;
-	};
-}
-
-Graph::Graph(char const *fname)
-{
+Graph::Graph(char const *fname) {
 	// Grafo inválido.
 	w = h = 0;
 	src = dst = 0;
