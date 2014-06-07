@@ -23,6 +23,9 @@
 #include <cmath>
 #include <cstdlib>
 
+#define DISTANCE_PRECISION 10.0
+
+// Direções usadas em JPS.
 enum Direction {
 	eNorth,
 	eNorthEast,
@@ -34,13 +37,17 @@ enum Direction {
 	eNorthWest
 };
 
-#define DISTANCE_PRECISION 10.0
-
+/*
+ * Nó no grafo. Guarda um mundo de informações que, em uma aplicação geral,
+ * seriam melhor armazenadas em estruturas temporárias separadas usadas pelos
+ * algoritmos.
+ */
 class Node {
 public:
 	friend class Graph;
 	friend class std::vector<Node>;
 
+	// Uso semelhante às buscas em largura e profundidade.
 	enum Color {
 		eWhite,
 		eGray,
@@ -51,12 +58,14 @@ public:
 		: parent(0), dist(~0u), clr(eWhite), x(_x), y(_y), blocked(_blocked) {
 	}
 
+	// Prepara para começar tudo de novo.
 	void init_single_source() {
 		dist = ~0u;
 		clr = eWhite;
 		parent = 0;
 	}
 
+	// Cálculo de distância usando métrica Euclideana padrão.
 	unsigned distance_to(Node const *other) const {
 		int dx = x - other->x, dy = y - other->y;
 		return static_cast<unsigned>(DISTANCE_PRECISION * sqrt(dx * dx + dy * dy));
@@ -88,6 +97,8 @@ protected:
 		: parent(0), dist(~0u), clr(eWhite) {
 	}
 
+	// Usado durante a inicialização do grafo, para que cada nó saiba sua
+	// posição na grade 2d.
 	void init(short _x, short _y, bool _blocked) {
 		x = _x;
 		y = _y;
@@ -107,30 +118,68 @@ private:
 	bool blocked;
 };
 
+/*
+ * Classe de grafo geral. Uma aplicação mais real provavelmente usaria algo mais
+ * flexível, que pudesse, por exemplo, carregar apenas parte do mapa. E também
+ * algo que tivesse mais funcionalidade, ao invés de ser tão específico para
+ * Dijkstra, A* e JPS.
+ */
 class Graph {
 public:
 	Graph(char const *fname);
 
+	/*
+	 * Se o grafo lido é válido ou não: precisa ter pelo menos 2 nós, um dos
+	 * quais é fonte e o outro é destino.
+	 */
 	bool is_valid() const {
 		return w != 0 && h != 0 && src != 0 && dst != 0;
 	}
 
-	Node const *get_src() const {
-		return src;
+	// Nó de origem.
+	Node       *get_src()       {	return src;	}
+
+	// Nó de destino.
+	Node       *get_dst()       {	return dst;	}
+
+	/*
+	 * Retorna todos nós adjacentes ao nó dado. Os nós adjacentes são obtidos
+	 * pela função get_adjacent.
+	 */
+	std::vector<Node *> get_adjacent_list(Node const *node) {
+		return get_adjacent_list(node->get_x(), node->get_y());
 	}
 
-	Node *get_src() {
-		return src;
+	/*
+	 * Retorna o nó adjacente ao nó dado na direção dada se o nó final:
+	 * (1) estiver dentro da grade;
+	 * (2) não for um nó bloqueado;
+	 * (3) puder ser alcançado do nó de origem (basicamente, diagonais tem que
+	 *     obedecer certas restrições).
+	 */
+	Node *get_adjacent(Node const *node, Direction dir) {
+		return get_adjacent(node->get_x(), node->get_y(), dir);
 	}
 
-	Node const *get_dst() const {
-		return dst;
+	// Prepara o grafo para executar uma busca por melhor caminho.
+	void init_single_source() {
+		for (std::vector<Node>::iterator it = nodes.begin();
+		     it != nodes.end(); ++it) {
+			it->init_single_source();
+		};
+		src->set_distance(0);
 	}
 
-	Node *get_dst() {
-		return dst;
-	}
+private:
+	unsigned w, h;
+	std::vector<Node> nodes;
+	Node *src, *dst;
 
+	/*
+	 * Retorna o ponteiro de um nó dado suas coordenadas, com verificação para
+	 * garantir que o nó referenciado é válido. Retorna 0 para um nó fora dos
+	 * limites.
+	 */
 	Node *get_node(int x, int y) {
 		if (x < 0 || static_cast<unsigned>(x) >= w
 		    || y < 0 || static_cast<unsigned>(y) >= h) {
@@ -140,29 +189,10 @@ public:
 		}
 	}
 
-	std::vector<Node *> get_adjacent_list(Node *node) {
-		return get_adjacent_list(node->get_x(), node->get_y());
-	}
-
-	Node *get_adjacent(Node *node, Direction dir) {
-		return get_adjacent(node->get_x(), node->get_y(), dir);
-	}
-
-	void init_single_source() {
-		for (std::vector<Node>::iterator it = nodes.begin();
-		     it != nodes.end(); ++it) {
-			it->init_single_source();
-		};
-		src->set_distance(0);
-	}
-
-protected:
-
-private:
-	unsigned w, h;
-	std::vector<Node> nodes;
-	Node *src, *dst;
-
+	/*
+	 * Retorna todos nós adjacentes ao nó dado. Os nós adjacentes são obtidos
+	 * pela função get_adjacent.
+	 */
 	std::vector<Node *> get_adjacent_list(int x, int y) {
 		std::vector<Node *> nodes;
 		nodes.reserve(8);
@@ -179,6 +209,13 @@ private:
 		return nodes;
 	}
 
+	/*
+	 * Retorna o nó adjacente ao nó dado na direção dada se o nó final:
+	 * (1) estiver dentro da grade;
+	 * (2) não for um nó bloqueado;
+	 * (3) puder ser alcançado do nó de origem (basicamente, diagonais tem que
+	 *     obedecer certas restrições).
+	 */
 	Node *get_adjacent(int x, int y, Direction dir) {
 		Node *adj = 0;
 		if (!can_step_to(x, y, dir)) {
@@ -219,6 +256,8 @@ private:
 		}
 	}
 
+	// Filtra diagonais que não tenham pelo menos uma direção adjacente que
+	// não seja bloqueada.
 	bool can_step_to(int x, int y, Direction to) {
 		switch (to) {
 			case eEast:

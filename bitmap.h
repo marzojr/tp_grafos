@@ -21,6 +21,7 @@
 
 // Estruturas para manipulação de bitmaps. Fonte: documentação de bitmaps:
 // http://msdn.microsoft.com/en-us/library/windows/desktop/dd183377(v=vs.85).aspx
+// Nada muito interessante aqui...
 
 typedef unsigned char  BYTE;
 typedef unsigned short WORD;

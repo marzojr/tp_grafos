@@ -30,20 +30,14 @@ using namespace std;
 # define UNUSED(x) x 
 #endif
 
-/*
- * Functor de comparação para algoritmo de Dijkstra. Como o heap na STL é um
- * max-heap, queremos que ele compare na ordem inversa.
- */
+// Functor de comparação para algoritmo de Dijkstra.
 struct DijkstraCmp {
 	bool operator()(Node const *lhs, Node const *rhs) {
 		return lhs->get_distance() < rhs->get_distance();
 	}
 };
 
-/*
- * Functor de comparação para A*. Como o heap na STL é um max-heap, queremos que
- * ele compare na ordem inversa.
- */
+// Functor de comparação para A* e derivados (inclusive JPS).
 struct AstarCmp {
 	AstarCmp(Node const *dest) : target(dest) {		}
 
@@ -76,14 +70,17 @@ struct DijkstraSuccessors {
 	template <typename H>
 	void operator()(Node *node, Node *UNUSED(src), Node *UNUSED(dst), Graph &g, H &heap,
 	                size_t &ins, size_t &upd) {
+		// Todos nós adjacentes não-bloqueados são sucessores.
 		vector<Node *> adj = g.get_adjacent_list(node);
 		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
 			Node *next = *it;
+			// "Relax" no Cormen.
 			unsigned dst = node->get_distance() + node->distance_to(next);
 			if (next->get_distance() > dst) {
 				next->set_distance(dst);
 				next->set_parent(node);
 				if (next->still_unseen()) {
+					// Nó não foi visto ainda, então não está no heap.
 					next->mark_seen();
 					heap.insert(next);
 					ins++;
@@ -103,30 +100,38 @@ struct JPSSuccessors {
 	template <typename H>
 	void operator()(Node *node, Node *src, Node *dst, Graph &g, H &heap,
 	                size_t &ins, size_t &upd) {
-		// Precisamos de saber a direção também, de modo que não dá para
-		// usar Graph::get_adjacent_list.
-		static Direction const dirs[] = {eNorth, eNorthEast, eEast, eSouthEast,
-			                             eSouth, eSouthWest, eWest, eNorthWest};
 		vector<Node *> adj;
 		if (node == src) {
+			// Para o nó de origem, todas direções tem que ser verificadas.
+			// Como precisamos de saber a direção também, de modo que não dá
+			// para usar Graph::get_adjacent_list.
+			static Direction const dirs[] = {eNorth, eNorthEast, eEast, eSouthEast,
+					                         eSouth, eSouthWest, eWest, eNorthWest};
 			for (unsigned ii = 0; ii < sizeof(dirs) / sizeof(dirs[0]); ii++) {
 				add_neighbour(g, node, dirs[ii], adj);
 			}
 		} else {
+			// Caso contrário, apenas alguns vizinhos são importantes.
 			adj = get_neighbours(node, g);
 		}
+
+		// Para cada nó adjacente...
 		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
 			Node *next = *it;
 			Direction dir = next->get_dir_from();
+			// ... ache o jump point nesta direção, se houver.
 			next = jump(node, src, dst, dir, g);
 			if (next) {
+				// Como houve, vamos realizar uma relaxação.
 				unsigned dst = node->get_distance() + node->distance_to(next);
 				if (next->get_distance() > dst) {
 					next->set_dir_from(dir);
 					next->set_distance(dst);
 					next->set_parent(node);
+					// Faz diferença?
 					//if (next->still_unseen()) {
 					if (!next->already_seen()) {
+						// Nó não foi visto ainda, então não está no heap.
 						next->mark_seen();
 						heap.insert(next);
 						ins++;
@@ -139,13 +144,19 @@ struct JPSSuccessors {
 		}
 	}
 private:
+	/*
+	 * Tenta achar um jump point na direção dada, usando as regras especificadas
+	 * no artigo original.
+	 */
 	Node *jump(Node *node, Node *src, Node *dst, Direction dir, Graph &g) {
 		Node *next = node;
 		do {
 			next = g.get_adjacent(next, dir);
 			if (!next) {
+				// Se o nó for bloqueado, estiver fora do mapa, não há um jump point.
 				return 0;
 			} else if (next == dst) {
+				// O nó de destino é sempre um jump point.
 				return next;
 			}
 			
@@ -153,10 +164,12 @@ private:
 			vector<Node *> adj;
 			forced_neighbours(g, next, dir, adj);
 			if (!adj.empty()) {
+				// Se sim, temos um jump point.
 				return next;
 			}
 
-			// Recursão nas diagonais.
+			// Recursão nas diagonais: busque por jump points nas direções
+			// ortoginais componentes da diagonal.
 			switch (dir) {
 				case eNorthEast:
 					if (jump(next, src, dst, eNorth, g) != 0) {
@@ -196,6 +209,8 @@ private:
 		} while (1);
 	}
 
+	// Adiciona o vizinho na direção dada se ele não estiver bloqueado, se ele
+	// estiver dentro do mapa *e* se ele for alcançável à partir do "pai".
 	void add_neighbour(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
 		Node *next = g.get_adjacent(node, dir);
 		if (next) {
@@ -204,6 +219,8 @@ private:
 		}
 	}
 
+	// Adiciona todos vizinhos naturais de um nó alcançado à partir de uma dada
+	// direção.
 	void natural_neighbours(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
 		// Vizinho natural comum a todos casos.
 		add_neighbour(g, node, dir, adj);
@@ -234,10 +251,11 @@ private:
 		}
 	}
 
+	// Adiciona todos vizinhos forçados de um nó alcançado à partir de uma dada
+	// direção.
 	void forced_neighbours(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
 		switch (dir) {
 			case eEast:
-				// Forçados:
 				if (!g.get_adjacent(node, eNorth)) {
 					add_neighbour(g, node, eNorthEast, adj);
 				}
@@ -246,7 +264,6 @@ private:
 				}
 				break;
 			case eWest:
-				// Forçados:
 				if (!g.get_adjacent(node, eNorth)) {
 					add_neighbour(g, node, eNorthWest, adj);
 				}
@@ -255,7 +272,6 @@ private:
 				}
 				break;
 			case eNorth:
-				// Forçados:
 				if (!g.get_adjacent(node, eEast)) {
 					add_neighbour(g, node, eNorthEast, adj);
 				}
@@ -264,7 +280,6 @@ private:
 				}
 				break;
 			case eSouth:
-				// Forçados:
 				if (!g.get_adjacent(node, eEast)) {
 					add_neighbour(g, node, eSouthEast, adj);
 				}
@@ -273,7 +288,6 @@ private:
 				}
 				break;
 			case eNorthEast:
-				// Forçados:
 				if (!g.get_adjacent(node, eWest)) {
 					add_neighbour(g, node, eNorthWest, adj);
 				}
@@ -282,7 +296,6 @@ private:
 				}
 				break;
 			case eSouthEast:
-				// Forçados:
 				if (!g.get_adjacent(node, eWest)) {
 					add_neighbour(g, node, eSouthWest, adj);
 				}
@@ -291,7 +304,6 @@ private:
 				}
 				break;
 			case eSouthWest:
-				// Forçados:
 				if (!g.get_adjacent(node, eEast)) {
 					add_neighbour(g, node, eSouthEast, adj);
 				}
@@ -300,7 +312,6 @@ private:
 				}
 				break;
 			case eNorthWest:
-				// Forçados:
 				if (!g.get_adjacent(node, eEast)) {
 					add_neighbour(g, node, eNorthEast, adj);
 				}
@@ -313,6 +324,7 @@ private:
 		}
 	}
 
+	// Obtém uma lista com todos vizinhos naturais e forçados de um nó.
 	vector<Node *> get_neighbours(Node *node, Graph &g) {
 		vector<Node *> adj;
 		adj.reserve(8);
@@ -331,6 +343,7 @@ void ShortestPath(Graph &g, Node *src, Node *dst, Compare cmp, Successors succ,
 	g.init_single_source();
 	ins = upd = pop = 0;
 
+	// Heap tem apenas nó inicial.
 	Heap<Node, Compare, GetIndex, SetIndex> heap(cmp);
 	heap.insert(src);
 	ins++;
@@ -340,14 +353,19 @@ void ShortestPath(Graph &g, Node *src, Node *dst, Compare cmp, Successors succ,
 		pop++;
 		u->mark_done();
 
+		// Se chegamos ao destino, podemos parar.
 		if (u == dst) {
 			break;
 		}
 
+		// Adiciona todos sucessores do nó atual ao heap.
 		succ(u, src, dst, g, heap, ins, upd);
 	}
 }
 
+/*
+ * Imprime diversas informações relevantes do caminho encontrado.
+ */
 void dump_path_info(Graph &UNUSED(g), Node *src, Node *dst, char const *method, size_t ins, size_t upd, size_t pop) {
 	cout << method << endl;
 	cout << "insert = " << ins << ", update = " << upd << ", extract = " << pop << endl;

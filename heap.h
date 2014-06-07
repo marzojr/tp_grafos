@@ -22,6 +22,12 @@
 #include <algorithm>
 #include <vector>
 
+/*
+ * Heap binário razoavelmente genérico. Tipo genérico de elemento, função ou
+ * functor especificado no construtor e no template, funções ou functors que
+ * devem ser especificados no template para obter ou alterar o índice no heap
+ * de um elemento. Uma alternativa é usar um hashmap para fazer a mesma coisa.
+ */
 template <typename T, typename Compare, typename GetIndex, typename SetIndex>
 class Heap {
 public:
@@ -61,9 +67,14 @@ public:
 			return 0;
 		}
 
+		// Modo "burro" de fazer: pega o último elemento do vetor e coloca na
+		// frente, então reorganiza.
 		T *elem = elements[0];
 		T *repl = elements[0] = elements.back();
 		elements.pop_back();
+
+		// Se só tinha um elemento, as operações acima todas funcionam sem nenhum
+		// problema; mas vamos sair agora, pois as demais iriam falhar.
 		if (elements.empty()) {
 			return elem;
 		}
@@ -77,6 +88,8 @@ public:
 	void update_elem(T *elem) {
 		size_t elemid = getid(elem);
 		size_t parent = get_parent(elemid);
+
+		// Move o elemento para a posição adequada.
 		while (elemid > 0 && cmp(elements[elemid], elements[parent]))
 		{
 			std::swap(elements[parent], elements[elemid]);
@@ -92,10 +105,12 @@ public:
 	}
 
 protected:
+	// Funções auxiliares.
 	static inline size_t get_parent(size_t elem) {	return (elem - 1) >> 1;	};
 	static inline size_t get_left(size_t elem)   {	return (elem << 1) + 1;	};
 	static inline size_t get_right(size_t elem)  {	return (elem << 1) + 2;	};
 
+	// Organiza os descendentes de elem de modo que elem vira a raiz de um heap.
 	void heapify(size_t elem) {
 		size_t ll = get_left(elem), rr = get_right(elem), smallest = elem;
 	
