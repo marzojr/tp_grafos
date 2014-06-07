@@ -1,6 +1,5 @@
 /* -*- Mode: C; indent-tabs-mode: t; c-basic-offset: 4; tab-width: 4 -*-  */
 /*
- * graph.h
  * Copyright (C) 2014 Marzo Sette Torres Junior <marzojr@dcc.ufmg.br>
  *
  * TP is free software: you can redistribute it and/or modify it
@@ -22,6 +21,20 @@
 
 #include <vector>
 #include <cmath>
+#include <cstdlib>
+
+enum Direction {
+	eNorth,
+	eNorthEast,
+	eEast,
+	eSouthEast,
+	eSouth,
+	eSouthWest,
+	eWest,
+	eNothWest
+};
+
+Direction flip_dir(Direction dir);
 
 class Node {
 public:
@@ -54,9 +67,12 @@ public:
 	short get_y() const             {	return y;	}
 	bool is_blocked() const         {	return blocked;	}
 	unsigned get_distance() const   {	return dist;	}
+	bool still_unseen() const       {	return clr == eWhite;	}
 	bool already_seen() const       {	return clr == eGray;	}
 	bool already_done() const       {	return clr == eBlack;	}
 	Node *get_parent() const        {	return parent;	}
+	size_t get_heapindex() const    {	return heapindex;	}
+	Direction get_dir_from() const  {	return from;	}
 
 	// Setters.
 	void set_distance(unsigned dst) {	dist = dst;	}
@@ -64,6 +80,8 @@ public:
 	void mark_seen()                {	clr = eGray;	}
 	void mark_done()                {	clr = eBlack;	}
 	void set_parent(Node *p)        {	parent = p;	}
+	void set_heapindex(size_t v)    {	heapindex = v;	}
+	void set_dir_from(Direction f)  {	from = f;	}
 
 protected:
 	Node()
@@ -79,47 +97,43 @@ protected:
 private:
 	// Informações para Dijkstra, A* e JPS:
 	Node *parent;
+	size_t heapindex;	
 	unsigned dist;
 	Color clr;
+	// Informações para JPS:
+	Direction from;
 	// Informações do vértice em si.
 	short x, y;
 	bool blocked;
 };
 
-struct DijkstraCmp {
-	bool operator()(Node const *lhs, Node const *rhs) {
-		return lhs->get_distance() < rhs->get_distance();
-	}
-};
-
-struct AstarCmp {
-	AstarCmp(Node const *dest) : target(dest) {		}
-
-	bool operator()(Node const *lhs, Node const *rhs) {
-		int dlhs = lhs->distance_to(target), drhs = rhs->distance_to(target);
-		return lhs->get_distance() + dlhs < rhs->get_distance() + drhs;
-	}
-private:
-	Node const *target;
-};
-
 class Graph {
 public:
-	enum Direction {
-		eNorth,
-		eNorthEast,
-		eEast,
-		eSouthEast,
-		eSouth,
-		eSouthWest,
-		eWest,
-		eNothWest
-	};
-
 	Graph(char const *fname);
 
+	bool is_valid() const {
+		return w != 0 && h != 0 && src != 0 && dst != 0;
+	}
+
+	Node const *get_src() const {
+		return src;
+	}
+
+	Node *get_src() {
+		return src;
+	}
+
+	Node const *get_dst() const {
+		return dst;
+	}
+
+	Node *get_dst() {
+		return dst;
+	}
+
 	Node *get_node(int x, int y) {
-		if (x < 0 || x >= w || y < 0 || y >= h) {
+		if (x < 0 || static_cast<unsigned>(x) >= w
+		    || y < 0 || static_cast<unsigned>(y) >= h) {
 			return 0;
 		} else {
 			return &(nodes[w * y + x]);
@@ -143,17 +157,19 @@ public:
 		     it != nodes.end(); ++it) {
 			it->init_single_source();
 		};
+		src->set_distance(0);
 	}
 
 protected:
 
 private:
-	short w, h;
+	unsigned w, h;
 	std::vector<Node> nodes;
+	Node *src, *dst;
 
 	std::vector<Node *> get_adjacent_list(int x, int y) {
 		std::vector<Node *> nodes;
-		nodes.resize(8);
+		nodes.reserve(8);
 		static Direction const dirs[] = {eNorth, eNorthEast, eEast, eSouthEast,
 		                                 eSouth, eSouthWest, eWest, eNothWest};
 
@@ -168,7 +184,11 @@ private:
 	}
 
 	Node *get_adjacent(int x, int y, Direction dir) {
-		Node *adj;
+		Node *adj = 0;
+		if (!can_step_to(x, y, dir)) {
+			return adj;
+		}
+
 		switch (dir) {
 			case eNorth:
 				adj = get_node(x + 0, y - 1);
@@ -203,6 +223,26 @@ private:
 		}
 	}
 
+	bool can_step_to(int x, int y, Direction to) {
+		switch (to) {
+			case eEast:
+			case eWest:
+			case eNorth:
+			case eSouth:
+				return true;
+			case eNorthEast:
+				return get_adjacent(x, y, eEast) || get_adjacent(x, y, eNorth);
+			case eSouthEast:
+				return get_adjacent(x, y, eEast) || get_adjacent(x, y, eSouth);
+			case eSouthWest:
+				return get_adjacent(x, y, eWest) || get_adjacent(x, y, eSouth);
+			case eNothWest:
+				return get_adjacent(x, y, eWest) || get_adjacent(x, y, eNorth);
+			default:
+				return false;
+		};
+	}
+
 	bool is_forced_node(int x, int y, Direction from) {
 		switch (from) {
 			case eEast:
@@ -219,6 +259,8 @@ private:
 				return !get_adjacent(x, y, eWest) || !get_adjacent(x, y, eSouth);
 			case eNothWest:
 				return !get_adjacent(x, y, eWest) || !get_adjacent(x, y, eNorth);
+			default:
+				return false;
 		};
 	}
 

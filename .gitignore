@@ -26,3 +26,7 @@ dijkstra
 
 # Backup
 *~
+
+# IDE databases
+.anjuta_sym_db.db
+
