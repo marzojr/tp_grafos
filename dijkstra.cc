@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <iomanip>
 #include <list>
 #include <string>
 
@@ -32,6 +33,8 @@ using namespace std;
 #else
 # define UNUSED(x) x 
 #endif
+
+//#define PRINT_PATH 1
 
 // Functor de comparação para algoritmo de Dijkstra.
 struct DijkstraCmp {
@@ -379,41 +382,43 @@ void ShortestPath(Graph &g, Node *src, Node const *dst, Compare cmp, Successors 
 /*
  * Imprime diversas informações relevantes do caminho encontrado.
  */
-void dump_path_info(Graph &UNUSED(g), Node *src, Node const *dst,
-                    char const *method, size_t ins, size_t upd, size_t pop,
-                    double mindist) {
+void dump_path_info(Node const *dst, char const *method, size_t ins,
+                    size_t upd, size_t pop, double mindist) {
 	cout << method << endl;
-	cout << "insert = " << ins << ", update = " << upd << ", extract = " << pop << endl;
+	cout << "insert = " << setw(6) << ins
+	     << ", update = " << setw(6) << upd
+	     << ", extract = " << setw(6) << pop;
 	if (dst->get_parent() == 0) {
-		cout << "destination unreachable from source" << endl;
+		cout << endl << "destination unreachable from source" << endl;
 		return;
 	}
 	double pathlen = round(dst->get_distance() * DISTANCE_PRECISION) / DISTANCE_PRECISION;
-	cout << "distance = " << pathlen
-	     << ", mindist = " << mindist << ", correct = "
-	     << (pathlen <= mindist) << endl;
+	cout << ", distance = " << setw(6) << pathlen
+	     << ", mindist = " << setw(6) << mindist
+	     << ", correct = " << setw(6) << (pathlen - mindist) << endl;
+
+#ifdef PRINT_PATH
 	cout << "path:" << endl;
 	list<Node const *> path;
 	Node const *prev = dst;
 	do {
 		path.push_front(prev);
 		prev = prev->get_parent();
-	} while (prev != src);
+	} while (prev != 0);
 
-	path.push_front(src);
-
-	size_t nodecnt = 16;
+	size_t nodecnt = 10;
 	for (list<Node const *>::const_iterator it = path.begin(); it != path.end(); ++it) {
-		if (++nodecnt == 16) {
+		if (++nodecnt == 10) {
 			cout << endl << "\t";
 			nodecnt = 0;
 		}
 		Node const *curr = *it;
-		cout << "(" << curr->get_x() << ", " << curr->get_y() << "); ";
+		cout << "(" << setw(3) << curr->get_x() << ", " << setw(3) << curr->get_y() << "); ";
 	}
 	if (nodecnt != 0) {
 		cout << endl;
 	}
+#endif
 }
 
 int main(int argc, char *argv[]) {
@@ -447,16 +452,16 @@ int main(int argc, char *argv[]) {
 #if 1
 			// Dijkstra
 			ShortestPath(g, src, dst, DijkstraCmp(), DijkstraSuccessors(), ins, upd, pop);
-			dump_path_info(g, src, dst, "==== Dijkstra ====", ins, upd, pop, exp.GetDistance());
+			dump_path_info(dst, "==== Dijkstra ====", ins, upd, pop, exp.GetDistance());
 #endif
 
 			// A*
 			ShortestPath(g, src, dst, AstarCmp(dst), DijkstraSuccessors(), ins, upd, pop);
-			dump_path_info(g, src, dst, "==== A* ==========", ins, upd, pop, exp.GetDistance());
+			dump_path_info(dst, "==== A* ==========", ins, upd, pop, exp.GetDistance());
 
 			// JPS
 			ShortestPath(g, src, dst, AstarCmp(dst), JPSSuccessors(), ins, upd, pop);
-			dump_path_info(g, src, dst, "==== JPS =========", ins, upd, pop, exp.GetDistance());
+			dump_path_info(dst, "==== JPS =========", ins, upd, pop, exp.GetDistance());
 		}
 	}
 	return 0;

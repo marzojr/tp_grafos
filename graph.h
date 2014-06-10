@@ -25,7 +25,7 @@
 #include <cstdlib>
 
 #define DISTANCE_PRECISION 100.0
-#define OCTILE_DISTANCE 1
+#define OCTILE_DISTANCE 0
 
 // Direções usadas em JPS.
 enum Direction {
