@@ -24,7 +24,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#define DISTANCE_PRECISION 10.0
+#define DISTANCE_PRECISION 100.0
 #define OCTILE_DISTANCE 1
 
 // Direções usadas em JPS.
@@ -57,29 +57,28 @@ public:
 	};
 
 	Node(short _x, short _y, bool _blocked)
-		: parent(0), dist(~0u), clr(eWhite), x(_x), y(_y), blocked(_blocked) {
+		: parent(0), dist(1.0E9), clr(eWhite), x(_x), y(_y), blocked(_blocked) {
 	}
 
 	// Prepara para começar tudo de novo.
 	void init_single_source() {
-		dist = ~0u;
+		dist = 1.0E9;
 		clr = eWhite;
 		parent = 0;
 	}
 
 	// Cálculo de distância usando métrica Euclideana padrão.
-	unsigned distance_to(Node const *other) const {
+	double distance_to(Node const *other) const {
 #ifdef OCTILE_DISTANCE
 		// "Octile distance": calcula a distância baseado nos movimentos que são
 		// permitidos: eixos ortogonais e disgonais em 45 graus.
-		int dx = std::abs(x - other->x), dy = std::abs(y - other->y);
+		double dx = std::abs(x - other->x), dy = std::abs(y - other->y);
 		static double const DIAGDIST = 1.414213562373095048801688 - 1.0;
-		return static_cast<unsigned>(DISTANCE_PRECISION * (std::max(dx, dy) +
-		                                                   DIAGDIST * std::min(dx, dy)));
+		return std::max(dx, dy) + DIAGDIST * std::min(dx, dy);
 #else
 		// Métrica Euclideana padrão.
-		int dx = x - other->x, dy = y - other->y;
-		return static_cast<unsigned>(DISTANCE_PRECISION * sqrt(dx * dx + dy * dy));
+		double dx = x - other->x, dy = y - other->y;
+		return sqrt(dx * dx + dy * dy);
 #endif
 	}
 
@@ -87,7 +86,7 @@ public:
 	short get_x() const             {	return x;	}
 	short get_y() const             {	return y;	}
 	bool is_blocked() const         {	return blocked;	}
-	unsigned get_distance() const   {	return dist;	}
+	double get_distance() const     {	return dist;	}
 	bool still_unseen() const       {	return clr == eWhite;	}
 	bool already_seen() const       {	return clr == eGray;	}
 	bool already_done() const       {	return clr == eBlack;	}
@@ -96,7 +95,7 @@ public:
 	Direction get_dir_from() const  {	return from;	}
 
 	// Setters.
-	void set_distance(unsigned dst) {	dist = dst;	}
+	void set_distance(double dst)   {	dist = dst;	}
 	void mark_unseen()              {	clr = eWhite;	}
 	void mark_seen()                {	clr = eGray;	}
 	void mark_done()                {	clr = eBlack;	}
@@ -121,7 +120,7 @@ private:
 	// Informações para Dijkstra, A* e JPS:
 	Node *parent;
 	size_t heapindex;	
-	unsigned dist;
+	double dist;
 	Color clr;
 	// Informações para JPS:
 	Direction from;
@@ -138,6 +137,7 @@ private:
  */
 class Graph {
 public:
+	Graph() : w(0), h(0) {}
 	Graph(char const *fname);
 
 	/*
@@ -145,14 +145,22 @@ public:
 	 * quais é fonte e o outro é destino.
 	 */
 	bool is_valid() const {
-		return w != 0 && h != 0 && src != 0 && dst != 0;
+		return w != 0 && h != 0;
 	}
 
-	// Nó de origem.
-	Node       *get_src()       {	return src;	}
-
-	// Nó de destino.
-	Node       *get_dst()       {	return dst;	}
+	/*
+	 * Retorna o ponteiro de um nó dado suas coordenadas, com verificação para
+	 * garantir que o nó referenciado é válido. Retorna 0 para um nó fora dos
+	 * limites.
+	 */
+	Node *get_node(int x, int y) {
+		if (x < 0 || static_cast<unsigned>(x) >= w
+		    || y < 0 || static_cast<unsigned>(y) >= h) {
+			return 0;
+		} else {
+			return &(nodes[w * y + x]);
+		}
+	}
 
 	/*
 	 * Retorna todos nós adjacentes ao nó dado. Os nós adjacentes são obtidos
@@ -174,7 +182,7 @@ public:
 	}
 
 	// Prepara o grafo para executar uma busca por melhor caminho.
-	void init_single_source() {
+	void init_single_source(Node *src) {
 		for (std::vector<Node>::iterator it = nodes.begin();
 		     it != nodes.end(); ++it) {
 			it->init_single_source();
@@ -185,21 +193,6 @@ public:
 private:
 	unsigned w, h;
 	std::vector<Node> nodes;
-	Node *src, *dst;
-
-	/*
-	 * Retorna o ponteiro de um nó dado suas coordenadas, com verificação para
-	 * garantir que o nó referenciado é válido. Retorna 0 para um nó fora dos
-	 * limites.
-	 */
-	Node *get_node(int x, int y) {
-		if (x < 0 || static_cast<unsigned>(x) >= w
-		    || y < 0 || static_cast<unsigned>(y) >= h) {
-			return 0;
-		} else {
-			return &(nodes[w * y + x]);
-		}
-	}
 
 	/*
 	 * Retorna todos nós adjacentes ao nó dado. Os nós adjacentes são obtidos

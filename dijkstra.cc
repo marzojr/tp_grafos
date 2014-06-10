@@ -16,11 +16,14 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "ScenarioLoader.h"
 #include "graph.h"
 #include "heap.h"
 
+#include <cmath>
 #include <iostream>
 #include <list>
+#include <string>
 
 using namespace std;
 
@@ -42,14 +45,18 @@ struct AstarCmp {
 	AstarCmp(Node const *dest) : target(dest) {		}
 
 	bool operator()(Node const *lhs, Node const *rhs) {
-		int dlhs = lhs->distance_to(target), drhs = rhs->distance_to(target);
-		int delta = (lhs->get_distance()) + dlhs - (rhs->get_distance() + drhs);
+		double dlhs = lhs->distance_to(target), drhs = rhs->distance_to(target);
+#if 1
+		return (lhs->get_distance()) + dlhs < rhs->get_distance() + drhs;
+#else
+		double dl = lhs->get_distance() + dlhs, dr = rhs->get_distance() + drhs;
 		// Se os nós não empataram, retorne o resultado da comparação.
-		if (delta != 0)
-			return delta < 0;
+		if (dl < dr || dr < dl)
+			return dl < dr;
 		// Caso contrário, vamos desempatar para tornar a busca mais eficiente.
 		// O critério de desempate é o nó com menor custo heurístico.
 		return dlhs < drhs;
+#endif
 	}
 private:
 	Node const *target;
@@ -74,14 +81,14 @@ struct SetIndex {
  */
 struct DijkstraSuccessors {
 	template <typename H>
-	void operator()(Node *node, Node *UNUSED(src), Node *UNUSED(dst), Graph &g, H &heap,
+	void operator()(Node *node, Node *UNUSED(src), Node const *UNUSED(dst), Graph &g, H &heap,
 	                size_t &ins, size_t &upd) {
 		// Todos nós adjacentes não-bloqueados são sucessores.
 		vector<Node *> adj = g.get_adjacent_list(node);
 		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
 			Node *next = *it;
 			// "Relax" no Cormen.
-			unsigned dst = node->get_distance() + node->distance_to(next);
+			double dst = node->get_distance() + node->distance_to(next);
 			if (next->get_distance() > dst) {
 				next->set_distance(dst);
 				next->set_parent(node);
@@ -104,7 +111,7 @@ struct DijkstraSuccessors {
  */
 struct JPSSuccessors {
 	template <typename H>
-	void operator()(Node *node, Node *src, Node *dst, Graph &g, H &heap,
+	void operator()(Node *node, Node *src, Node const *dst, Graph &g, H &heap,
 	                size_t &ins, size_t &upd) {
 		vector<Node *> adj;
 		if (node == src) {
@@ -129,7 +136,7 @@ struct JPSSuccessors {
 			next = jump(node, src, dst, dir, g);
 			if (next) {
 				// Como houve, vamos realizar uma relaxação.
-				unsigned dst = node->get_distance() + node->distance_to(next);
+				double dst = node->get_distance() + node->distance_to(next);
 				if (next->get_distance() > dst) {
 					next->set_dir_from(dir);
 					next->set_distance(dst);
@@ -154,7 +161,7 @@ private:
 	 * Tenta achar um jump point na direção dada, usando as regras especificadas
 	 * no artigo original.
 	 */
-	Node *jump(Node *node, Node *src, Node *dst, Direction dir, Graph &g) {
+	Node *jump(Node *node, Node *src, Node const *dst, Direction dir, Graph &g) {
 		Node *next = node;
 		do {
 			next = g.get_adjacent(next, dir);
@@ -344,9 +351,9 @@ private:
 // Versão genérica para Dijkstra, A* e JPS usando functors ou poiteiros para
 // funções para efetuar as operações necessárias.
 template <typename Compare, typename Successors>
-void ShortestPath(Graph &g, Node *src, Node *dst, Compare cmp, Successors succ,
+void ShortestPath(Graph &g, Node *src, Node const *dst, Compare cmp, Successors succ,
                   size_t &ins, size_t &upd, size_t &pop) {
-	g.init_single_source();
+	g.init_single_source(src);
 	ins = upd = pop = 0;
 
 	// Heap tem apenas nó inicial.
@@ -372,17 +379,22 @@ void ShortestPath(Graph &g, Node *src, Node *dst, Compare cmp, Successors succ,
 /*
  * Imprime diversas informações relevantes do caminho encontrado.
  */
-void dump_path_info(Graph &UNUSED(g), Node *src, Node *dst, char const *method, size_t ins, size_t upd, size_t pop) {
+void dump_path_info(Graph &UNUSED(g), Node *src, Node const *dst,
+                    char const *method, size_t ins, size_t upd, size_t pop,
+                    double mindist) {
 	cout << method << endl;
 	cout << "insert = " << ins << ", update = " << upd << ", extract = " << pop << endl;
 	if (dst->get_parent() == 0) {
 		cout << "destination unreachable from source" << endl;
 		return;
 	}
-	cout << "distance = " << dst->get_distance() / DISTANCE_PRECISION << endl;
+	double pathlen = round(dst->get_distance() * DISTANCE_PRECISION) / DISTANCE_PRECISION;
+	cout << "distance = " << pathlen
+	     << ", mindist = " << mindist << ", correct = "
+	     << (pathlen <= mindist) << endl;
 	cout << "path:" << endl;
-	list<Node *> path;
-	Node *prev = dst;
+	list<Node const *> path;
+	Node const *prev = dst;
 	do {
 		path.push_front(prev);
 		prev = prev->get_parent();
@@ -391,12 +403,12 @@ void dump_path_info(Graph &UNUSED(g), Node *src, Node *dst, char const *method, 
 	path.push_front(src);
 
 	size_t nodecnt = 16;
-	for (list<Node *>::const_iterator it = path.begin(); it != path.end(); ++it) {
+	for (list<Node const *>::const_iterator it = path.begin(); it != path.end(); ++it) {
 		if (++nodecnt == 16) {
 			cout << endl << "\t";
 			nodecnt = 0;
 		}
-		Node *curr = *it;
+		Node const *curr = *it;
 		cout << "(" << curr->get_x() << ", " << curr->get_y() << "); ";
 	}
 	if (nodecnt != 0) {
@@ -406,32 +418,46 @@ void dump_path_info(Graph &UNUSED(g), Node *src, Node *dst, char const *method, 
 
 int main(int argc, char *argv[]) {
 	if (argc < 2) {
-		cerr << "Falta nome do grafo." << endl;
+		cerr << "Falta nome do cenario." << endl;
 		return 1;
 	}
 
-	Graph g(argv[1]);
-	if (!g.is_valid()) {
-		cerr << "Grafo '" << argv[1] << "' invalido ou inexistente." << endl;
-		return 1;
+	for (int ii = 1; ii < argc; ii++) {
+		ScenarioLoader const scen(argv[ii]);
+		string lastfile;
+		Graph g;
+		for (int jj = 0; jj < scen.GetNumExperiments(); jj++) {
+			Experiment const &exp = scen.GetNthExperiment(jj);
+			string const &newfile = exp.GetMapName();
+			if (lastfile != newfile) {
+				lastfile = newfile;
+				g = Graph(lastfile.c_str());
+				if (!g.is_valid()) {
+					cerr << "No cenario '" << scen.GetScenarioName()
+					     << "', experimento " << jj << ": Grafo '" << lastfile
+					     << "' invalido ou inexistente." << endl;
+					continue;
+				}
+			}
+
+			Node *src = g.get_node(exp.GetStartX(), exp.GetStartY());
+			Node const *dst = g.get_node(exp.GetGoalX(), exp.GetGoalY());
+			// Para estatísticas.
+			size_t ins, upd, pop;
+#if 1
+			// Dijkstra
+			ShortestPath(g, src, dst, DijkstraCmp(), DijkstraSuccessors(), ins, upd, pop);
+			dump_path_info(g, src, dst, "==== Dijkstra ====", ins, upd, pop, exp.GetDistance());
+#endif
+
+			// A*
+			ShortestPath(g, src, dst, AstarCmp(dst), DijkstraSuccessors(), ins, upd, pop);
+			dump_path_info(g, src, dst, "==== A* ==========", ins, upd, pop, exp.GetDistance());
+
+			// JPS
+			ShortestPath(g, src, dst, AstarCmp(dst), JPSSuccessors(), ins, upd, pop);
+			dump_path_info(g, src, dst, "==== JPS =========", ins, upd, pop, exp.GetDistance());
+		}
 	}
-
-	Node *src = g.get_src(), *dst = g.get_dst();
-	// Para estatísticas.
-	size_t ins, upd, pop;
-	// Dijkstra
-	ShortestPath(g, src, dst, DijkstraCmp(), DijkstraSuccessors(), ins, upd, pop);
-	dump_path_info(g, src, dst, "==== Dijkstra ====", ins, upd, pop);
-
-	// A*
-	ShortestPath(g, src, dst, AstarCmp(dst), DijkstraSuccessors(), ins, upd, pop);
-	dump_path_info(g, src, dst, "==== A* ==========", ins, upd, pop);
-
-	// JPS
-	ShortestPath(g, src, dst, AstarCmp(dst), JPSSuccessors(), ins, upd, pop);
-	dump_path_info(g, src, dst, "==== JPS =========", ins, upd, pop);
 	return 0;
 }
-
-
-
