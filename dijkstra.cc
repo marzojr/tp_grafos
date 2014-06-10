@@ -43,7 +43,13 @@ struct AstarCmp {
 
 	bool operator()(Node const *lhs, Node const *rhs) {
 		int dlhs = lhs->distance_to(target), drhs = rhs->distance_to(target);
-		return lhs->get_distance() + dlhs < rhs->get_distance() + drhs;
+		int delta = (lhs->get_distance()) + dlhs - (rhs->get_distance() + drhs);
+		// Se os nós não empataram, retorne o resultado da comparação.
+		if (delta != 0)
+			return delta < 0;
+		// Caso contrário, vamos desempatar para tornar a busca mais eficiente.
+		// O critério de desempate é o nó com menor custo heurístico.
+		return dlhs < drhs;
 	}
 private:
 	Node const *target;

@@ -20,10 +20,12 @@
 #define _GRAPH_H_
 
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
 #define DISTANCE_PRECISION 10.0
+#define OCTILE_DISTANCE 1
 
 // Direções usadas em JPS.
 enum Direction {
@@ -67,8 +69,18 @@ public:
 
 	// Cálculo de distância usando métrica Euclideana padrão.
 	unsigned distance_to(Node const *other) const {
+#ifdef OCTILE_DISTANCE
+		// "Octile distance": calcula a distância baseado nos movimentos que são
+		// permitidos: eixos ortogonais e disgonais em 45 graus.
+		int dx = std::abs(x - other->x), dy = std::abs(y - other->y);
+		static double const DIAGDIST = 1.414213562373095048801688 - 1.0;
+		return static_cast<unsigned>(DISTANCE_PRECISION * (std::max(dx, dy) +
+		                                                   DIAGDIST * std::min(dx, dy)));
+#else
+		// Métrica Euclideana padrão.
 		int dx = x - other->x, dy = y - other->y;
 		return static_cast<unsigned>(DISTANCE_PRECISION * sqrt(dx * dx + dy * dy));
+#endif
 	}
 
 	// Getters.
