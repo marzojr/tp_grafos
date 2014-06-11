@@ -90,11 +90,10 @@ public:
 		size_t parent = get_parent(elemid);
 
 		// Move o elemento para a posição adequada.
-		while (elemid > 0 && cmp(elements[elemid], elements[parent]))
-		{
+		while (elemid > 0 && cmp(elements[elemid], elements[parent])) {
 			std::swap(elements[parent], elements[elemid]);
-			setid(elements[parent], elemid);
-			setid(elem, parent);
+			setid(elements[parent], parent);
+			setid(elements[elemid], elemid);
 			elemid = parent;
 			parent = get_parent(elemid);
 		}
@@ -120,8 +119,7 @@ protected:
 		if (rr < elements.size() && cmp(elements[rr], elements[smallest]))
 			smallest = rr;
 	
-		if (smallest != elem)
-		{
+		if (smallest != elem) {
 			// O elemento está na posição errada; mova-o para uma menos errada.
 			std::swap(elements[smallest], elements[elem]);
 			setid(elements[smallest], smallest);
