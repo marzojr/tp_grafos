@@ -25,7 +25,7 @@
 #include <cstdlib>
 
 #define DISTANCE_PRECISION 100.0
-#define OCTILE_DISTANCE 0
+#define OCTILE_DISTANCE 1
 
 // Direções usadas em JPS.
 enum Direction {
@@ -72,13 +72,13 @@ public:
 #ifdef OCTILE_DISTANCE
 		// "Octile distance": calcula a distância baseado nos movimentos que são
 		// permitidos: eixos ortogonais e disgonais em 45 graus.
-		double dx = std::abs(x - other->x), dy = std::abs(y - other->y);
+		int dx = std::abs(x - other->x), dy = std::abs(y - other->y);
 		static double const DIAGDIST = 1.414213562373095048801688 - 1.0;
-		return std::max(dx, dy) + DIAGDIST * std::min(dx, dy);
+		return 1.0 * std::max(dx, dy) + DIAGDIST * std::min(dx, dy);
 #else
 		// Métrica Euclideana padrão.
-		double dx = x - other->x, dy = y - other->y;
-		return sqrt(dx * dx + dy * dy);
+		int dx = x - other->x, dy = y - other->y;
+		return std::sqrt(1.0 * (dx * dx + dy * dy));
 #endif
 	}
 
