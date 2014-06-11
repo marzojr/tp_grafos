@@ -19,6 +19,7 @@
 #include "graph.h"
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <string>
 
@@ -51,12 +52,15 @@ Graph::Graph(char const *fname) {
 
 	// Cria espaço para o grafo.
 	nodes.resize(w * h);
+	fin >> ws;
 
 	// Vértices.
+	string line;
+	line.reserve(w + 1);
 	for (unsigned jj = 0; jj < h && fin.good(); jj++) {
+		getline(fin, line);
 		for (unsigned ii = 0; ii < w && fin.good(); ii++) {
-			char node;
-			fin >> node;
+			char node = line[ii];
 			Node *curr = &(nodes[w * jj + ii]);
 			switch (node) {
 				case '\n':
@@ -68,6 +72,7 @@ Graph::Graph(char const *fname) {
 					break;
 				case '@':	// Impassável.
 				case 'O':	// Impassável.
+				case 'T':	// Impassável.
 				default:	// Inválido; vamos assumir impassável.
 					curr->init(ii, jj, true);
 					break;
