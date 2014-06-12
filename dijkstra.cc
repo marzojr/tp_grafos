@@ -20,6 +20,8 @@
 #include "graph.h"
 #include "heap.h"
 
+#include <sys/time.h>
+
 #include <cmath>
 #include <iostream>
 #include <iomanip>
@@ -36,6 +38,14 @@ using namespace std;
 
 //#define PRINT_PATH 1
 
+static inline double usec2sec(timeval const &tim) {
+	return tim.tv_sec + (tim.tv_usec / 1000000.0);
+}
+
+static inline double delta_t(timeval const &start, timeval const &finish) {
+	return usec2sec(finish) - usec2sec(start);
+}
+
 // Functor de comparação para algoritmo de Dijkstra.
 struct DijkstraCmp {
 	bool operator()(Node const *lhs, Node const *rhs) {
@@ -49,12 +59,12 @@ struct AstarCmp {
 
 	bool operator()(Node const *lhs, Node const *rhs) {
 		double dlhs = lhs->distance_to(target), drhs = rhs->distance_to(target);
-#if 1
-		return (lhs->get_distance()) + dlhs < rhs->get_distance() + drhs;
+#if 0
+		return lhs->get_distance() + dlhs < rhs->get_distance() + drhs;
 #else
 		double dl = lhs->get_distance() + dlhs, dr = rhs->get_distance() + drhs;
 		// Se os nós não empataram, retorne o resultado da comparação.
-		if (dl < dr || dr < dl)
+		if (dl != dr)
 			return dl < dr;
 		// Caso contrário, vamos desempatar para tornar a busca mais eficiente.
 		// O critério de desempate é o nó com menor custo heurístico.
@@ -90,6 +100,9 @@ struct DijkstraSuccessors {
 		vector<Node *> adj = g.get_adjacent_list(node);
 		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
 			Node *next = *it;
+			if (next->already_done()) {
+				continue;
+			}
 			// "Relax" no Cormen.
 			double dst = node->get_distance() + node->distance_to(next);
 			if (next->get_distance() > dst) {
@@ -121,8 +134,9 @@ struct JPSSuccessors {
 			// Para o nó de origem, todas direções tem que ser verificadas.
 			// Como precisamos de saber a direção também, de modo que não dá
 			// para usar Graph::get_adjacent_list.
-			static Direction const dirs[] = {eNorth, eNorthEast, eEast, eSouthEast,
-					                         eSouth, eSouthWest, eWest, eNorthWest};
+			static Direction const dirs[] = {eNorth, eSouth, eEast, eWest,
+			                                 eNorthEast, eSouthEast,
+			                                 eSouthWest, eNorthWest};
 			for (unsigned ii = 0; ii < sizeof(dirs) / sizeof(dirs[0]); ii++) {
 				add_neighbour(g, node, dirs[ii], adj);
 			}
@@ -134,27 +148,31 @@ struct JPSSuccessors {
 		// Para cada nó adjacente...
 		for (vector<Node *>::iterator it = adj.begin(); it != adj.end(); ++it) {
 			Node *next = *it;
+			if (next->already_done()) {
+				continue;
+			}
 			Direction dir = next->get_dir_from();
 			// ... ache o jump point nesta direção, se houver.
 			next = jump(node, src, dst, dir, g);
-			if (next) {
-				// Como houve, vamos realizar uma relaxação.
-				double dst = node->get_distance() + node->distance_to(next);
-				if (next->get_distance() > dst) {
-					next->set_dir_from(dir);
-					next->set_distance(dst);
-					next->set_parent(node);
-					// Faz diferença?
-					//if (next->still_unseen()) {
-					if (!next->already_seen()) {
-						// Nó não foi visto ainda, então não está no heap.
-						next->mark_seen();
-						heap.insert(next);
-						ins++;
-					} else {
-						heap.update_elem(next);
-						upd++;
-					}
+			if (!next) {
+				continue;
+			}
+			// Como houve, vamos realizar uma relaxação.
+			double dst = node->get_distance() + node->distance_to(next);
+			if (next->get_distance() > dst) {
+				next->set_dir_from(dir);
+				next->set_distance(dst);
+				next->set_parent(node);
+				// Faz diferença?
+				//if (next->still_unseen()) {
+				if (!next->already_seen()) {
+					// Nó não foi visto ainda, então não está no heap.
+					next->mark_seen();
+					heap.insert(next);
+					ins++;
+				} else {
+					heap.update_elem(next);
+					upd++;
 				}
 			}
 		}
@@ -238,9 +256,7 @@ private:
 	// Adiciona todos vizinhos naturais de um nó alcançado à partir de uma dada
 	// direção.
 	void natural_neighbours(Graph &g, Node *node, Direction dir, vector<Node *> &adj) {
-		// Vizinho natural comum a todos casos.
-		add_neighbour(g, node, dir, adj);
-
+		// Vizinhos especiais para diagonais.
 		switch (dir) {
 			case eNorthEast:
 				// Naturais:
@@ -265,6 +281,9 @@ private:
 			default:
 				break;
 		}
+		// Vizinho natural comum a todos casos. Adicionado por último para que
+		// as diagonais venham depois das direções ortogonais.
+		add_neighbour(g, node, dir, adj);
 	}
 
 	// Adiciona todos vizinhos forçados de um nó alcançado à partir de uma dada
@@ -383,7 +402,7 @@ void ShortestPath(Graph &g, Node *src, Node const *dst, Compare cmp, Successors 
  * Imprime diversas informações relevantes do caminho encontrado.
  */
 void dump_path_info(Node const *dst, char const *method, size_t ins,
-                    size_t upd, size_t pop, double mindist) {
+                    size_t upd, size_t pop, double mindist, double time) {
 	cout << method << endl;
 	cout << "insert = " << setw(6) << ins
 	     << ", update = " << setw(6) << upd
@@ -395,7 +414,8 @@ void dump_path_info(Node const *dst, char const *method, size_t ins,
 	double pathlen = round(dst->get_distance() * DISTANCE_PRECISION) / DISTANCE_PRECISION;
 	cout << ", distance = " << setw(6) << pathlen
 	     << ", mindist = " << setw(6) << mindist
-	     << ", correct = " << setw(6) << (pathlen - mindist) << endl;
+	     << ", correct = " << setw(6) << (pathlen - mindist)
+	     << ", time = " << setw(6) << time << endl;
 
 #ifdef PRINT_PATH
 	cout << "path:" << endl;
@@ -449,19 +469,47 @@ int main(int argc, char *argv[]) {
 			Node const *dst = g.get_node(exp.GetGoalX(), exp.GetGoalY());
 			// Para estatísticas.
 			size_t ins, upd, pop;
-#if 1
+			timeval start, finish;
+
+#define DIJKSTRA
+#define A_STAR
+#define JUMP_POINT_SEARCH
+#define MAXCNT 5
+#ifdef DIJKSTRA
 			// Dijkstra
-			ShortestPath(g, src, dst, DijkstraCmp(), DijkstraSuccessors(), ins, upd, pop);
-			dump_path_info(dst, "==== Dijkstra ====", ins, upd, pop, exp.GetDistance());
+			gettimeofday(&start, NULL);
+			for (int cnt = 0; cnt < MAXCNT; cnt++) {
+				ShortestPath(g, src, dst, DijkstraCmp(), DijkstraSuccessors(),
+					         ins, upd, pop);
+			}
+			gettimeofday(&finish, NULL);
+			dump_path_info(dst, "==== Dijkstra ====", ins, upd, pop,
+			               exp.GetDistance(), delta_t(start, finish) / MAXCNT);
 #endif
 
+#ifdef A_STAR
 			// A*
-			ShortestPath(g, src, dst, AstarCmp(dst), DijkstraSuccessors(), ins, upd, pop);
-			dump_path_info(dst, "==== A* ==========", ins, upd, pop, exp.GetDistance());
+			gettimeofday(&start, NULL);
+			for (int cnt = 0; cnt < MAXCNT; cnt++) {
+				ShortestPath(g, src, dst, AstarCmp(dst), DijkstraSuccessors(),
+			             ins, upd, pop);
+			}
+			gettimeofday(&finish, NULL);
+			dump_path_info(dst, "==== A* ==========", ins, upd, pop,
+			               exp.GetDistance(), delta_t(start, finish) / MAXCNT);
+#endif
 
+#ifdef JUMP_POINT_SEARCH
 			// JPS
-			ShortestPath(g, src, dst, AstarCmp(dst), JPSSuccessors(), ins, upd, pop);
-			dump_path_info(dst, "==== JPS =========", ins, upd, pop, exp.GetDistance());
+			gettimeofday(&start, NULL);
+			for (int cnt = 0; cnt < MAXCNT; cnt++) {
+				ShortestPath(g, src, dst, AstarCmp(dst), JPSSuccessors(),
+			             ins, upd, pop);
+			}
+			gettimeofday(&finish, NULL);
+			dump_path_info(dst, "==== JPS =========", ins, upd, pop,
+			               exp.GetDistance(), delta_t(start, finish) / MAXCNT);
+#endif
 		}
 	}
 	return 0;
