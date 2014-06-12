@@ -30,3 +30,9 @@ dijkstra
 # IDE databases
 .anjuta_sym_db.db
 
+# Testes
+maps
+scen
+plots
+*.log
+
